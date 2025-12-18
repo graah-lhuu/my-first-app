@@ -1,0 +1,237 @@
+﻿#include <iostream>
+#include <stack>
+#include <string>
+#include <vector>
+#include <cctype>
+#include <sstream>
+#include <stdexcept>
+#include <cmath>
+#include <map>
+#include <functional>
+
+using namespace std;
+
+class ExpressionCalculator {
+private:
+	// 支持的数学函数映射
+	map<string, function<double(double)>> unaryFunctions = {
+		{"sin", [](double x) { return sin(x); }},
+		{"cos", [](double x) { return cos(x); }},
+		{"tan", [](double x) { return tan(x); }},
+		{"log", [](double x) { return log(x); }},
+		{"exp", [](double x) { return exp(x); }},
+		{"sqrt", [](double x) { return sqrt(x); }}
+	};
+
+	// 判断字符是否为运算符
+	bool isOperator(char c) {
+		return c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^';
+	}
+
+	// 获取运算符优先级
+	int getPriority(char op) {
+		if (op == '+' || op == '-') return 1;
+		if (op == '*' || op == '/' || op == '%') return 2;
+		if (op == '^') return 3; // 次方优先级最高
+		if (op == 'p' || op == 'n') return 4; // 正负号优先级
+		return 0;
+	}
+
+	// 判断是否为右结合运算符（次方是右结合）
+	bool isRightAssociative(char op) {
+		return op == '^';
+	}
+
+	// 执行运算
+	double calculate(double a, double b, char op) {
+		switch (op) {
+		case '+': return a + b;
+		case '-': return a - b;
+		case '*': return a * b;
+		case '/':
+			if (b == 0) throw runtime_error("除数不能为零");
+			return a / b;
+		case '%':
+			if (b == 0) throw runtime_error("取余运算除数为零");
+			return fmod(a, b);
+		case '^': return pow(a, b);
+		default: throw runtime_error("未知运算符");
+		}
+	}
+
+	// 一元运算
+	double calculateUnary(double a, char op) {
+		switch (op) {
+		case 'p': return a;  // 正号
+		case 'n': return -a; // 负号
+		default: throw runtime_error("未知一元运算符");
+		}
+	}
+
+	// 判断是否为一元运算符（正负号）
+	bool isUnaryOperator(const string& expr, int pos) {
+		// 在表达式开头，或者前一个字符是运算符或左括号，且当前字符是+或-
+		if (pos == 0) return expr[pos] == '+' || expr[pos] == '-';
+
+		char prev = expr[pos - 1];
+		return (prev == '(' || isOperator(prev) || prev == ',') &&
+			(expr[pos] == '+' || expr[pos] == '-');
+	}
+
+	// 提取函数名
+	string extractFunctionName(const string& expr, int& pos) {
+		string name;
+		while (pos < expr.length() && isalpha(expr[pos])) {
+			name += expr[pos++];
+		}
+		return name;
+	}
+
+public:
+	// 主计算函数
+	double evaluate(const string& expression) {
+		stack<double> values;    // 操作数栈
+		stack<char> operators;   // 运算符栈
+		stack<string> functions; // 函数栈
+
+		string expr = expression;
+
+		for (int i = 0; i < expr.length(); i++) {
+			char c = expr[i];
+
+			// 跳过空格
+			if (c == ' ') continue;
+
+			// 如果是数字，读取完整数字
+			if (isdigit(c) || c == '.') {
+				string numStr;
+				while (i < expr.length() &&
+					(isdigit(expr[i]) || expr[i] == '.')) {
+					numStr += expr[i++];
+				}
+				i--; // 回退一格
+
+				double num = stod(numStr);
+				values.push(num);
+			}
+			// 如果是字母，可能是函数名
+			else if (isalpha(c)) {
+				string funcName = extractFunctionName(expr, i);
+				i--; // 回退一格
+				functions.push(funcName);
+			}
+			// 如果是左括号，直接入栈
+			else if (c == '(') {
+				operators.push(c);
+			}
+			// 如果是逗号（函数参数分隔符）
+			else if (c == ',') {
+				// 计算到左括号前的所有运算
+				while (!operators.empty() && operators.top() != '(') {
+					char op = operators.top(); operators.pop();
+					double b = values.top(); values.pop();
+					double a = values.top(); values.pop();
+					values.push(calculate(a, b, op));
+				}
+			}
+			// 如果是右括号，计算括号内的表达式
+			else if (c == ')') {
+				// 先计算括号内的表达式
+				while (!operators.empty() && operators.top() != '(') {
+					char op = operators.top(); operators.pop();
+					double b = values.top(); values.pop();
+					double a = values.top(); values.pop();
+					values.push(calculate(a, b, op));
+				}
+				if (!operators.empty()) operators.pop(); // 弹出左括号
+
+				// 如果有函数，应用函数
+				if (!functions.empty()) {
+					string funcName = functions.top(); functions.pop();
+					if (unaryFunctions.find(funcName) != unaryFunctions.end()) {
+						double a = values.top(); values.pop();
+						values.push(unaryFunctions[funcName](a));
+					}
+				}
+			}
+			// 处理一元正负号
+			else if (isUnaryOperator(expr, i)) {
+				char unaryOp = (c == '+') ? 'p' : 'n'; // p代表正号，n代表负号
+				operators.push(unaryOp);
+			}
+			// 如果是二元运算符
+			else if (isOperator(c)) {
+				// 处理优先级
+				while (!operators.empty() && operators.top() != '(' &&
+					(getPriority(operators.top()) > getPriority(c) ||
+					(getPriority(operators.top()) == getPriority(c) &&
+						!isRightAssociative(c)))) {
+					char op = operators.top(); operators.pop();
+					// 检查是否为一元运算符
+					if (op == 'p' || op == 'n') {
+						double a = values.top(); values.pop();
+						values.push(calculateUnary(a, op));
+					} else {
+						double b = values.top(); values.pop();
+						double a = values.top(); values.pop();
+						values.push(calculate(a, b, op));
+					}
+				}
+				operators.push(c);
+			}
+		}
+
+		// 处理剩余的运算符
+		while (!operators.empty()) {
+			char op = operators.top(); operators.pop();
+			if (op == 'p' || op == 'n') {
+				// 一元运算符
+				double a = values.top(); values.pop();
+				values.push(calculateUnary(a, op));
+			} else {
+				// 二元运算符
+				double b = values.top(); values.pop();
+				double a = values.top(); values.pop();
+				values.push(calculate(a, b, op));
+			}
+		}
+
+		if (values.size() != 1) {
+			throw runtime_error("表达式格式错误");
+		}
+
+		return values.top();
+	}
+};
+
+// 测试函数
+int main(void) {
+	ExpressionCalculator calc;
+
+	cout << "增强版表达式计算器" << endl;
+	cout << "支持: + - * / % ^ ( ) 正负号 log() exp() sin() cos() tan() sqrt()" << endl;
+	cout << "输入 'quit' 退出程序" << endl;
+	cout << "示例: " << endl;
+	cout << "  -2 + 3 * 4^2  =>  -2 + 3 * 16 = 46" << endl;
+	cout << "  10 % 3 + sin(0)  =>  1 + 0 = 1" << endl;
+	cout << endl;
+
+	while (true) {
+		cout << "请输入表达式: ";
+		string input;
+		getline(cin, input);
+
+		if (input == "quit") break;
+
+		try {
+			double result = calc.evaluate(input);
+			cout << "结果: " << result << endl;
+		}
+		catch (const exception& e) {
+			cout << "计算错误: " << e.what() << endl;
+		}
+		cout << endl;
+	}
+
+	return 0;
+}
