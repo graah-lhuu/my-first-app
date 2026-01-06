@@ -1,7 +1,6 @@
 ﻿#include <iostream>
 #include <stack>
 #include <string>
-#include <vector>
 #include <cctype>
 #include <sstream>
 #include <stdexcept>
@@ -234,4 +233,5 @@ int main(void) {
 	}
 
 	return 0;
+
 }
